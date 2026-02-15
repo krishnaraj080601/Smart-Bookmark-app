@@ -1,36 +1,214 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📌 Smart Bookmark – Full Stack Bookmark Manager
 
-## Getting Started
+Smart Bookmark is a modern full-stack web application built with Next.js and Supabase that allows users to securely save, manage, and search bookmarks with real-time updates and automatic metadata extraction.
 
-First, run the development server:
+---
 
-```bash
+# 🏗 Project Architecture Overview
+
+The application follows a full-stack architecture using:
+
+- **Frontend:** Next.js (App Router)
+- **Backend:** Next.js API Routes
+- **Database:** Supabase (PostgreSQL)
+- **Authentication:** Supabase Google OAuth
+- **Realtime Engine:** Supabase Realtime (Postgres Changes)
+- **Metadata Parsing:** Cheerio (Server-side HTML parsing)
+
+The project is structured to separate:
+
+- UI Layer
+- Business Logic
+- API Layer
+- Database Layer
+
+---
+
+# 📂 Project Structure
+
+smart-bookmark/
+│
+├── app/
+│ ├── page.js → Main dashboard (bookmarks UI)
+│ ├── login/page.js → Google login page
+│ └── api/
+│ ├── metadata/route.js → Metadata extraction API
+│ └── search/route.js → Web search API
+│
+├── lib/
+│ └── supabase.js → Supabase client configuration
+│
+├── public/ → Static assets
+│
+├── README.md
+├── .env.local
+└── package.json
+
+---
+
+# 🔐 Authentication Flow (How It Works)
+
+1. User clicks **Continue with Google**
+2. Supabase handles OAuth flow
+3. After authentication, user is redirected to dashboard
+4. Supabase session is stored client-side
+5. Protected route checks for authenticated user
+6. If no user → redirect to `/login`
+
+Row Level Security (RLS) ensures:
+
+
+So users can only access their own bookmarks.
+
+---
+
+# 🗄 Database Design
+
+Table: `bookmarks`
+
+| Column      | Type      | Description |
+|------------|----------|------------|
+| id         | uuid     | Primary key |
+| title      | text     | Bookmark title |
+| url        | text     | Website URL |
+| user_id    | uuid     | Linked to authenticated user |
+| created_at | timestamp| Auto-generated |
+
+Security:
+- RLS Enabled
+- Policy ensures user-level isolation
+
+---
+
+# ⚡ Real-Time Sync
+
+The app subscribes to:
+
+
+2. Server:
+   - Validates URL
+   - Fetches HTML
+   - Parses Open Graph & Twitter meta tags
+   - Extracts:
+     - Title
+     - Description
+     - Favicon
+   - Returns structured JSON
+
+Why server-side?
+- Avoid CORS issues
+- Hide scraping logic
+- Add timeout protection (5s)
+
+---
+
+# 🌐 Web Search Feature
+
+The app integrates with:
+
+DuckDuckGo Instant Answer API
+
+Flow:
+1. User searches query
+2. API fetches results
+3. Results displayed
+4. User can directly add result as bookmark
+
+---
+
+# 🔍 Search Optimization
+
+Client-side search uses:
+
+- 300ms debounce hook
+- Prevents unnecessary re-renders
+- Improves UX performance
+
+---
+
+# 📄 Pagination
+
+- Page size: 6 bookmarks
+- "Load More" button
+- Prevents rendering large datasets at once
+
+---
+
+# 🌙 Dark Mode
+
+- Local state-based toggle
+- Dynamic Tailwind styling
+- Fully responsive UI
+
+---
+
+# 🛠 Tech Stack
+
+Frontend:
+- Next.js (App Router)
+- React
+- Tailwind CSS
+- Framer Motion
+- React Hot Toast
+
+Backend:
+- Next.js API Routes
+- Cheerio (HTML parsing)
+
+Database:
+- Supabase PostgreSQL
+- Supabase Auth
+- Supabase Realtime
+
+---
+
+# ⚙️ Environment Variables
+
+Create `.env.local`:
+
+NEXT_PUBLIC_SUPABASE_URL=your_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key
+
+---
+
+# ▶️ Run Locally
+
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Runs on:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn More
+http://localhost:3000
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# 🚀 Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Deployed using Vercel.
 
-## Deploy on Vercel
+Steps:
+1. Push to GitHub
+2. Import into Vercel
+3. Add environment variables
+4. Deploy
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# 🔮 Future Improvements
+
+- Server-side pagination
+- Redis caching for metadata
+- Bookmark tags & categories
+- Drag-and-drop sorting
+- PWA support
+- Preview image support
+
+---
+
+# 👨‍💻 Author
+
+Krishna Raj
+
+
