@@ -1,3 +1,6 @@
+// app/api/search/route.js
+// Alternative: Using SerpAPI (requires API key) or a simpler approach
+
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
@@ -9,55 +12,65 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Query is required' }, { status: 400 });
     }
 
-    // Using DuckDuckGo Instant Answer API (free, no API key needed)
-    const response = await fetch(
-      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    );
+    // OPTION A: Using SerpAPI (recommended - sign up at serpapi.com for free tier)
+    const SERP_API_KEY = process.env.SERP_API_KEY;
+    
+    if (SERP_API_KEY) {
+      const serpUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${SERP_API_KEY}&num=10`;
+      
+      const response = await fetch(serpUrl);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const results = (data.organic_results || []).map(item => ({
+          title: item.title,
+          url: item.link,
+          description: item.snippet
+        }));
+        
+        return NextResponse.json({ results });
+      }
+    }
 
-    const data = await response.json();
+    // OPTION B: Fallback - DuckDuckGo HTML scraping (no API key needed, but less reliable)
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    
+    const response = await fetch(ddgUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
 
-    // Extract results
+    if (!response.ok) {
+      throw new Error('Search request failed');
+    }
+
+    const html = await response.text();
+    
+    // Parse DuckDuckGo results (basic regex parsing)
     const results = [];
-
-    // Add main result if available
-    if (data.AbstractURL && data.AbstractText) {
+    const resultRegex = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([^<]+)</g;
+    
+    let match;
+    while ((match = resultRegex.exec(html)) !== null && results.length < 10) {
       results.push({
-        title: data.Heading || query,
-        url: data.AbstractURL,
-        description: data.AbstractText,
+        title: match[2].trim(),
+        url: decodeURIComponent(match[1]),
+        description: match[3].trim()
       });
     }
 
-    // Add related topics
-    if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
-      data.RelatedTopics.forEach((topic) => {
-        if (topic.FirstURL && topic.Text) {
-          results.push({
-            title: topic.Text.split(' - ')[0] || topic.Text.substring(0, 100),
-            url: topic.FirstURL,
-            description: topic.Text,
-          });
-        }
-      });
-    }
-
-    // If no results from DuckDuckGo, create a Google search suggestion
-    if (results.length === 0) {
-      results.push({
-        title: `Search Google for "${query}"`,
-        url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-        description: 'Open Google search in new tab',
-      });
-    }
-
-    // Limit to 10 results
-    return NextResponse.json({ results: results.slice(0, 10) });
+    return NextResponse.json({ results });
 
   } catch (error) {
     console.error('Search error:', error);
-    return NextResponse.json(
-      { error: 'Search failed', results: [] },
-      { status: 500 }
-    );
+    return NextResponse.json({ 
+      error: 'Search failed',
+      details: error.message,
+      results: [] 
+    }, { status: 500 });
   }
 }
+
+// Add runtime config for Vercel
+export const runtime = 'edge'; // Use edge runtime for faster responses

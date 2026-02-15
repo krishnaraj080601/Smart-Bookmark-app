@@ -1,5 +1,5 @@
+// app/api/metadata/route.js
 import { NextResponse } from 'next/server';
-import * as cheerio from 'cheerio';
 
 export async function GET(request) {
   try {
@@ -17,50 +17,74 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
     }
 
-    // Fetch the page
+    // Fetch the page with timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
     const response = await fetch(url, {
+      signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; BookmarkBot/1.0)',
       },
-      signal: AbortSignal.timeout(5000), // 5 second timeout
-    });
+    }).finally(() => clearTimeout(timeout));
 
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to fetch page' }, { status: response.status });
     }
 
     const html = await response.text();
-    const $ = cheerio.load(html);
 
-    // Extract metadata
-    const title = 
-      $('meta[property="og:title"]').attr('content') ||
-      $('meta[name="twitter:title"]').attr('content') ||
-      $('title').text() ||
-      url;
+    // Extract title using multiple methods
+    let title = '';
 
-    const description =
-      $('meta[property="og:description"]').attr('content') ||
-      $('meta[name="twitter:description"]').attr('content') ||
-      $('meta[name="description"]').attr('content') ||
-      '';
+    // Try Open Graph title
+    const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+    if (ogTitleMatch) {
+      title = ogTitleMatch[1];
+    }
 
-    const favicon =
-      $('link[rel="icon"]').attr('href') ||
-      $('link[rel="shortcut icon"]').attr('href') ||
-      '/favicon.ico';
+    // Try Twitter title
+    if (!title) {
+      const twitterTitleMatch = html.match(/<meta\s+name=["']twitter:title["']\s+content=["']([^"']+)["']/i);
+      if (twitterTitleMatch) {
+        title = twitterTitleMatch[1];
+      }
+    }
 
-    return NextResponse.json({
-      title: title.trim(),
-      description: description.trim(),
-      favicon: favicon,
+    // Try regular title tag
+    if (!title) {
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      if (titleMatch) {
+        title = titleMatch[1];
+      }
+    }
+
+    // Decode HTML entities
+    if (title) {
+      title = title
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#039;/g, "'")
+        .trim();
+    }
+
+    return NextResponse.json({ 
+      title: title || 'Untitled',
+      url 
     });
 
   } catch (error) {
     console.error('Metadata fetch error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch metadata' },
-      { status: 500 }
-    );
+    
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ error: 'Request timeout' }, { status: 408 });
+    }
+
+    return NextResponse.json({ 
+      error: 'Failed to fetch metadata',
+      details: error.message 
+    }, { status: 500 });
   }
 }

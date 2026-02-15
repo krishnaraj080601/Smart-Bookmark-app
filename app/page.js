@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -53,6 +53,26 @@ function useDebounce(value, delay) {
   return debouncedValue;
 }
 
+// 🧠 SESSION HANDLING: Safely get user or refresh token
+const getUserSafe = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (user) return user;
+
+    const { data: sessionData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError) {
+      console.warn("⚠️ Refresh token invalid or expired", refreshError.message);
+      return null;
+    }
+
+    return sessionData?.user || null;
+  } catch (err) {
+    console.error("Auth fetch failed:", err);
+    return null;
+  }
+};
+
 let lastSaveTime = 0;
 const PAGE_SIZE = 6;
 
@@ -86,18 +106,21 @@ export default function Home() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // 🧠 INIT: User + bookmarks with safe session handling
   useEffect(() => {
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const currentUser = await getUserSafe();
+      if (!currentUser) {
+        toast.error("Session expired. Redirecting to login...");
         router.push("/login");
         return;
       }
-      setUser(user);
+      setUser(currentUser);
+
       const { data } = await supabase
         .from("bookmarks")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", currentUser.id)
         .order("created_at", { ascending: false });
       setBookmarks(data || []);
     };
@@ -153,12 +176,12 @@ export default function Home() {
     }
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setEditingId(null);
     setTitle("");
     setUrl("");
     setShowForm(false);
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!title.trim() || !url.trim()) {
@@ -205,8 +228,16 @@ export default function Home() {
     }
 
     setIsSearching(true);
+    setWebResults([]); // Clear previous results
+    
     try {
       const response = await fetch(`/api/search?q=${encodeURIComponent(webSearch)}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Search failed');
+      }
+      
       const data = await response.json();
       
       if (data.results && data.results.length > 0) {
@@ -218,7 +249,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Search error:", error);
-      toast.error("Search failed");
+      toast.error(error.message || "Search failed - check console for details");
     } finally {
       setIsSearching(false);
     }
@@ -242,13 +273,13 @@ export default function Home() {
     }
   };
 
-  const startEdit = (bookmark) => {
+  const startEdit = useCallback((bookmark) => {
     setEditingId(bookmark.id);
     setTitle(bookmark.title);
     setUrl(bookmark.url);
     setShowForm(true);
     setShowWebSearch(false);
-  };
+  }, []);
 
   const deleteBookmark = async (id) => {
     const { error } = await supabase.from("bookmarks").delete().eq("id", id);
@@ -256,53 +287,69 @@ export default function Home() {
     else toast.success("Deleted");
   };
 
-  const copyLink = (url) => {
+  const copyLink = useCallback((url) => {
     navigator.clipboard.writeText(url);
     toast.success("Copied!");
-  };
+  }, []);
 
   const logout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
   };
 
-  const handleAddManuallyClick = () => {
+  const handleAddManuallyClick = useCallback(() => {
     if (showForm) {
       resetForm();
     } else {
       setShowForm(true);
       setShowWebSearch(false);
     }
-  };
+  }, [showForm, resetForm]);
 
-  const handleSearchWebClick = () => {
-    setShowWebSearch(!showWebSearch);
+  const handleSearchWebClick = useCallback(() => {
+    setShowWebSearch(prev => !prev);
     setShowForm(false);
     setWebResults([]);
-  };
+  }, []);
 
-  if (!user) return null;
+  // 🔥 PERFORMANCE FIX: Optimize dark mode toggle with useCallback
+  const toggleDarkMode = useCallback(() => {
+    setDark(prev => !prev);
+  }, []);
 
+  // 🔥 CRITICAL: All hooks must be called BEFORE any conditional returns
   // Use debounced search for filtering (client-side)
-  const filtered = bookmarks.filter((b) =>
-    b.title.toLowerCase().includes(debouncedSearch.toLowerCase())
+  const filtered = useMemo(() => 
+    bookmarks.filter((b) =>
+      b.title.toLowerCase().includes(debouncedSearch.toLowerCase())
+    ),
+    [bookmarks, debouncedSearch]
   );
 
-  const paginated = filtered.slice(0, page * PAGE_SIZE);
+  const paginated = useMemo(() => 
+    filtered.slice(0, page * PAGE_SIZE),
+    [filtered, page]
+  );
+
+  // Early return AFTER all hooks
+  if (!user) return null;
 
   return (
     <div
-      className={`${dark ? 'dark' : ''} ${
-        dark
-          ? "bg-gradient-to-br from-indigo-950 via-purple-950 to-slate-950"
-          : "bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100"
-      } min-h-screen flex justify-center p-6 transition-all duration-500`}
+      className={`${dark ? 'dark' : ''} min-h-screen flex justify-center p-6`}
+      // 🔥 PERFORMANCE FIX: Move background to separate layer to prevent repaints
+      style={{
+        background: dark
+          ? 'linear-gradient(to bottom right, rgb(30 27 75), rgb(88 28 135), rgb(15 23 42))'
+          : 'linear-gradient(to bottom right, rgb(239 246 255), rgb(224 231 255), rgb(243 232 255))'
+      }}
     >
       <div
         className="w-full max-w-6xl h-[92vh] rounded-3xl backdrop-blur-xl
         bg-white/75 dark:bg-gray-900/80
         border border-white/40 dark:border-gray-700/70
-        shadow-2xl p-8 overflow-y-auto"
+        shadow-2xl p-8 overflow-y-auto
+        transition-colors duration-300"
       >
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -321,21 +368,18 @@ export default function Home() {
           </div>
 
           <div className="flex gap-3 items-center">
+            {/* 🔥 PERFORMANCE FIX: Simplified button with optimized transitions */}
             <button
-              onClick={() => setDark(!dark)}
+              onClick={toggleDarkMode}
               className={`
-                px-5 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-all duration-200
+                px-5 py-2 rounded-full text-sm font-medium flex items-center gap-2
                 shadow-sm hover:shadow-md active:scale-95
+                transition-all duration-200
                 ${dark 
                   ? "bg-gray-700/90 text-gray-100 hover:bg-gray-600 border border-gray-600/50" 
-                  : "bg-gray-200/90 text-gray-800 hover:bg-gray-300 border border-gray-300"}
-              `}
+                  : "bg-gray-200/90 text-gray-800 hover:bg-gray-300 border border-gray-300"}`}
             >
-              {dark ? (
-                <>☀️ Light</>
-              ) : (
-                <>🌙 Dark</>
-              )}
+              {dark ? <>☀️ Light</> : <>🌙 Dark</>}
             </button>
 
             <button
@@ -351,7 +395,7 @@ export default function Home() {
         <div className="relative mb-6">
           <input
             placeholder="Search bookmarks (debounced 300ms)..."
-            className="w-full md:w-1/2 p-4 rounded-2xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:ring-4 focus:ring-blue-400/30 focus:border-blue-500 outline-none transition text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 shadow-sm"
+            className="w-full md:w-1/2 p-4 rounded-2xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:ring-4 focus:ring-blue-400/30 focus:border-blue-500 outline-none transition-colors text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 shadow-sm"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
