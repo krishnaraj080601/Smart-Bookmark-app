@@ -1,6 +1,3 @@
-// app/api/search/route.js
-// Alternative: Using SerpAPI (requires API key) or a simpler approach
-
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
@@ -9,68 +6,107 @@ export async function GET(request) {
     const query = searchParams.get('q');
 
     if (!query) {
-      return NextResponse.json({ error: 'Query is required' }, { status: 400 });
+      return NextResponse.json({ 
+        error: 'Query is required',
+        results: [] 
+      }, { status: 400 });
     }
 
-    // OPTION A: Using SerpAPI (recommended - sign up at serpapi.com for free tier)
+    console.log('Search query:', query);
+
+    // Try SerpAPI first (if API key exists)
     const SERP_API_KEY = process.env.SERP_API_KEY;
     
     if (SERP_API_KEY) {
-      const serpUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${SERP_API_KEY}&num=10`;
-      
-      const response = await fetch(serpUrl);
-      
-      if (response.ok) {
-        const data = await response.json();
-        const results = (data.organic_results || []).map(item => ({
-          title: item.title,
-          url: item.link,
-          description: item.snippet
-        }));
+      console.log('Using SerpAPI...');
+      try {
+        const serpUrl = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${SERP_API_KEY}&num=10`;
         
-        return NextResponse.json({ results });
+        const response = await fetch(serpUrl);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const results = (data.organic_results || []).map(item => ({
+            title: item.title,
+            url: item.link,
+            description: item.snippet || ''
+          }));
+          
+          console.log('SerpAPI success, results:', results.length);
+          return NextResponse.json({ results });
+        } else {
+          console.error('SerpAPI error:', response.status);
+        }
+      } catch (serpError) {
+        console.error('SerpAPI exception:', serpError.message);
       }
     }
 
-    // OPTION B: Fallback - DuckDuckGo HTML scraping (no API key needed, but less reliable)
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    // Try Google Custom Search (if API key exists)
+    const GOOGLE_API_KEY = process.env.GOOGLE_SEARCH_API_KEY;
+    const SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID;
     
-    const response = await fetch(ddgUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    if (GOOGLE_API_KEY && SEARCH_ENGINE_ID) {
+      console.log('Using Google Custom Search...');
+      try {
+        const googleUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}`;
+        
+        const response = await fetch(googleUrl);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const results = (data.items || []).slice(0, 10).map(item => ({
+            title: item.title,
+            url: item.link,
+            description: item.snippet || ''
+          }));
+          
+          console.log('Google Custom Search success, results:', results.length);
+          return NextResponse.json({ results });
+        } else {
+          console.error('Google Custom Search error:', response.status);
+        }
+      } catch (googleError) {
+        console.error('Google Custom Search exception:', googleError.message);
       }
+    }
+
+    // Fallback: Use a simple mock search or return helpful message
+    console.log('No API keys configured, returning mock results...');
+    
+    // Return mock results with helpful message
+    const mockResults = [
+      {
+        title: `Search API Not Configured - Showing mock result for: ${query}`,
+        url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+        description: 'To enable real search results, add SERP_API_KEY or GOOGLE_SEARCH_API_KEY to your environment variables. Click here to search on Google instead.'
+      },
+      {
+        title: 'How to Enable Search',
+        url: 'https://serpapi.com',
+        description: 'Sign up for a free SerpAPI account (100 searches/month) and add SERP_API_KEY to your Vercel environment variables.'
+      },
+      {
+        title: 'Alternative: Google Custom Search',
+        url: 'https://programmablesearchengine.google.com',
+        description: 'Or use Google Custom Search API - create a search engine and add GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID.'
+      }
+    ];
+
+    return NextResponse.json({ 
+      results: mockResults,
+      warning: 'Using mock results - add API keys for real search'
     });
 
-    if (!response.ok) {
-      throw new Error('Search request failed');
-    }
-
-    const html = await response.text();
-    
-    // Parse DuckDuckGo results (basic regex parsing)
-    const results = [];
-    const resultRegex = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]+class="result__snippet"[^>]*>([^<]+)</g;
-    
-    let match;
-    while ((match = resultRegex.exec(html)) !== null && results.length < 10) {
-      results.push({
-        title: match[2].trim(),
-        url: decodeURIComponent(match[1]),
-        description: match[3].trim()
-      });
-    }
-
-    return NextResponse.json({ results });
-
   } catch (error) {
-    console.error('Search error:', error);
+    console.error('Search route error:', error);
     return NextResponse.json({ 
       error: 'Search failed',
       details: error.message,
-      results: [] 
+      results: []
     }, { status: 500 });
   }
 }
 
-// Add runtime config for Vercel
-export const runtime = 'edge'; // Use edge runtime for faster responses
+// Use Node.js runtime for better compatibility
+export const runtime = 'nodejs';

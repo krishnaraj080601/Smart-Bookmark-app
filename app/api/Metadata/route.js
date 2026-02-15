@@ -7,84 +7,126 @@ export async function GET(request) {
     const url = searchParams.get('url');
 
     if (!url) {
-      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+      return NextResponse.json({ 
+        error: 'URL is required',
+        title: 'Untitled' 
+      }, { status: 400 });
     }
 
     // Validate URL
     try {
       new URL(url);
     } catch {
-      return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+      return NextResponse.json({ 
+        error: 'Invalid URL',
+        title: 'Untitled',
+        url 
+      }, { status: 400 });
     }
 
-    // Fetch the page with timeout
+    console.log('Fetching metadata for:', url);
+
+    // Fetch with timeout
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeout = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; BookmarkBot/1.0)',
-      },
-    }).finally(() => clearTimeout(timeout));
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        },
+      });
 
-    if (!response.ok) {
-      return NextResponse.json({ error: 'Failed to fetch page' }, { status: response.status });
-    }
+      clearTimeout(timeout);
 
-    const html = await response.text();
-
-    // Extract title using multiple methods
-    let title = '';
-
-    // Try Open Graph title
-    const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
-    if (ogTitleMatch) {
-      title = ogTitleMatch[1];
-    }
-
-    // Try Twitter title
-    if (!title) {
-      const twitterTitleMatch = html.match(/<meta\s+name=["']twitter:title["']\s+content=["']([^"']+)["']/i);
-      if (twitterTitleMatch) {
-        title = twitterTitleMatch[1];
+      if (!response.ok) {
+        console.error('Fetch failed with status:', response.status);
+        return NextResponse.json({ 
+          title: url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0],
+          url 
+        });
       }
-    }
 
-    // Try regular title tag
-    if (!title) {
-      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-      if (titleMatch) {
-        title = titleMatch[1];
+      const html = await response.text();
+
+      // Extract title using multiple methods
+      let title = '';
+
+      // Try Open Graph title
+      const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+      if (ogTitleMatch) {
+        title = ogTitleMatch[1];
       }
-    }
 
-    // Decode HTML entities
-    if (title) {
-      title = title
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#039;/g, "'")
-        .trim();
-    }
+      // Try Twitter title
+      if (!title) {
+        const twitterTitleMatch = html.match(/<meta\s+name=["']twitter:title["']\s+content=["']([^"']+)["']/i);
+        if (twitterTitleMatch) {
+          title = twitterTitleMatch[1];
+        }
+      }
 
-    return NextResponse.json({ 
-      title: title || 'Untitled',
-      url 
-    });
+      // Try regular title tag
+      if (!title) {
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if (titleMatch) {
+          title = titleMatch[1];
+        }
+      }
+
+      // Decode HTML entities
+      if (title) {
+        title = title
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#039;/g, "'")
+          .replace(/&nbsp;/g, ' ')
+          .trim();
+      }
+
+      // Fallback to domain name if no title found
+      if (!title) {
+        title = url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+      }
+
+      console.log('Metadata extracted successfully:', title);
+
+      return NextResponse.json({ 
+        title: title || 'Untitled',
+        url 
+      });
+
+    } catch (fetchError) {
+      clearTimeout(timeout);
+      
+      if (fetchError.name === 'AbortError') {
+        console.error('Request timeout for:', url);
+        return NextResponse.json({ 
+          title: url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0],
+          url 
+        });
+      }
+
+      throw fetchError;
+    }
 
   } catch (error) {
-    console.error('Metadata fetch error:', error);
+    console.error('Metadata route error:', error);
     
-    if (error.name === 'AbortError') {
-      return NextResponse.json({ error: 'Request timeout' }, { status: 408 });
-    }
-
+    // Return a friendly fallback instead of failing
+    const url = new URL(request.url).searchParams.get('url') || '';
+    const fallbackTitle = url ? url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] : 'Untitled';
+    
     return NextResponse.json({ 
-      error: 'Failed to fetch metadata',
-      details: error.message 
-    }, { status: 500 });
+      title: fallbackTitle,
+      url: url || '',
+      warning: 'Could not fetch full metadata'
+    });
   }
 }
+
+// Use Node.js runtime for better compatibility
+export const runtime = 'nodejs';

@@ -26,16 +26,16 @@ const fetchPageMetadata = async (url) => {
 
   try {
     const response = await fetch(`/api/metadata?url=${encodeURIComponent(url)}`);
-    if (response.ok) {
-      const data = await response.json();
-      metadataCache.set(url, data);
-      console.log("💾 Cached metadata for:", url);
-      return data;
-    }
+    const data = await response.json();
+    
+    // Even if there's an error, cache what we got
+    metadataCache.set(url, data);
+    console.log("💾 Cached metadata for:", url);
+    return data;
   } catch (error) {
     console.error("Failed to fetch metadata:", error);
+    return { title: '', url };
   }
-  return null;
 };
 
 // 🧠 SYSTEM DESIGN: Debounce Hook
@@ -231,25 +231,47 @@ export default function Home() {
     setWebResults([]); // Clear previous results
     
     try {
+      console.log('Making search request...');
       const response = await fetch(`/api/search?q=${encodeURIComponent(webSearch)}`);
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Search failed');
-      }
+      console.log('Response status:', response.status);
+      console.log('hello');
       
       const data = await response.json();
+      console.log('Response data:', data);
+      
+      if (!response.ok) {
+        // Handle error but still show helpful info
+        console.error('Search API error:', data);
+        
+        if (data.warning) {
+          toast(data.warning, { duration: 4000 });
+        } else {
+          toast.error(data.error || 'Search failed');
+        }
+        
+        // Still show results if available (mock results)
+        if (data.results && data.results.length > 0) {
+          setWebResults(data.results);
+        }
+        return;
+      }
       
       if (data.results && data.results.length > 0) {
         setWebResults(data.results);
-        toast.success(`Found ${data.results.length} results`);
+        
+        if (data.warning) {
+          toast(data.warning, { icon: '⚠️', duration: 4000 });
+        } else {
+          toast.success(`Found ${data.results.length} results`);
+        }
       } else {
         toast.error("No results found");
         setWebResults([]);
       }
     } catch (error) {
       console.error("Search error:", error);
-      toast.error(error.message || "Search failed - check console for details");
+      toast.error("Search failed - check console");
     } finally {
       setIsSearching(false);
     }
@@ -337,7 +359,6 @@ export default function Home() {
   return (
     <div
       className={`${dark ? 'dark' : ''} min-h-screen flex justify-center p-6`}
-      // 🔥 PERFORMANCE FIX: Move background to separate layer to prevent repaints
       style={{
         background: dark
           ? 'linear-gradient(to bottom right, rgb(30 27 75), rgb(88 28 135), rgb(15 23 42))'
@@ -368,7 +389,6 @@ export default function Home() {
           </div>
 
           <div className="flex gap-3 items-center">
-            {/* 🔥 PERFORMANCE FIX: Simplified button with optimized transitions */}
             <button
               onClick={toggleDarkMode}
               className={`
@@ -394,7 +414,7 @@ export default function Home() {
         {/* Search with debounce indicator */}
         <div className="relative mb-6">
           <input
-            placeholder="Search bookmarks (debounced 300ms)..."
+            placeholder="Search bookmarks..."
             className="w-full md:w-1/2 p-4 rounded-2xl bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 focus:ring-4 focus:ring-blue-400/30 focus:border-blue-500 outline-none transition-colors text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 shadow-sm"
             value={search}
             onChange={(e) => {
