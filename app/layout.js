@@ -1,6 +1,8 @@
+import './globals.css';
+
 export const metadata = {
-  title: "Smart Bookmark",
-  description: "Realtime Bookmark Manager",
+  title: 'Smart Bookmark',
+  description: 'Manage bookmarks efficiently',
 };
 
 export default function RootLayout({ children }) {
@@ -10,4 +12,3 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
-
