@@ -205,6 +205,15 @@ Steps:
 - PWA support
 - Preview image support
 
+The most challenging parts of Smart Bookmark were:
+
+Real-Time Synchronization:
+Keeping bookmarks updated across devices in real-time while ensuring security was tricky. Using Supabase Realtime along with Row Level Security (RLS) helped make sure each user could only access their own bookmarks.
+
+Web Search Integration:
+Implementing a smooth web search feature that lets users search and add bookmarks directly was challenging. Integrating the DuckDuckGo Instant Answer API, handling the results efficiently, and allowing instant addition to bookmarks required careful API handling and UI optimization.
+
+Overcoming these challenges improved both performance and user experience significantly.
 ---
 
 # 👨‍💻 Author

@@ -1,14 +1,13 @@
-import "./globals.css";
-import Providers from "./providers";
+export const metadata = {
+  title: "Smart Bookmark",
+  description: "Realtime Bookmark Manager",
+};
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>
-        <Providers>{children}</Providers>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
-
 
